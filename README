@@ -1,0 +1,117 @@
+CSE 533 : NETWORK PROGRAMMING
+Student: NEHA OJHA 
+Email: nojha@cs.stonybrook.edu
+Student ID: 111635128
+Assignment No: 02
+-------------------------------------------------------------------------------
+
+1. In order to bind only to unicast addresses, I have removed the check for 
+   broadcast addresses. I get only ifi_addr value from the struct ifi_info, 
+   which always has ip address. To get broadcast address I have to check 
+   flags and get it from ifi_brdaddr, which I am NOT doing.
+
+2. The structure used to hold the information with respect to every socket 
+   bound to each interface of server conains 4 fields.
+   - sockfd (integer)
+   - addr (struct in_addr)
+   - ntmaddr (struct in_addr)
+   - subaddr (struct in_addr)
+   I create an array of such structures. subaddr is result of bitwise 
+   AND between addr and ntmaddr.
+
+3. Updated all the function and did calculations in microseconds instead of 
+   seconds. Made all the changes as mentioned in assignment description. Updated
+   the name of all unp files to append my_ in front. As an example rtt.c 
+   becomes my_rtt.c
+   In the my_unprrt.h header file I have set :
+    RTT_RXTMIN to 1000000 usec. (1 sec. instead of the old value  3 sec.)
+    RTT_RXTMAX to 3000000 usec. (3 sec. instead of the old value 60 sec.)
+    RTT_MAXNREXMT to 12 (instead of the old value 3)
+   I also changed the estimator calculation to use shift operator instead of 
+   divison.
+
+4. TCP reliability features:
+   -> I have Implemented FLOW_CONTROL by not sending packets to client when 
+      advertised window is 0. Once I get advertised window as zero after every 
+      timeout I send a probe to client by sending last packet and not 
+      increasing timeout count.
+   -> I implemented congestion control(SLOW START, CONGESTION AVOIDANCE) by 
+      setting ss threshold to advertised window in begining and then setting 
+      it to cwin/2 when timeout happens. cwin is increase by number of acks 
+      recieved when cwin<sst and after that it is incresed by 1 only when I 
+      get a total of cwin packets. Wealso implemented Fast recovery by setting 
+      cwin to ssthreshold when it is more than sst in case of 3 dup acks.
+   -> I implemented ARQ_MECHANISM by using rtt and SIG_ALARM, the minimum 
+      value for rtt is 1 sec and max is 3 sec. rto is calculated again when 
+      an ack(not delayed) is recieved.
+
+5. The clean closing and exiting is implemented as follows:
+   -> The last packet coming from server will have payload of lesser size 
+      resulting in notification to of last packet. If, by chance, the last 
+      packet is full, then server sends another packet with no payload to 
+      notify the user.
+   -> The client then joins the consumer thread (ensuring consumer thread to 
+      read all data before exiting).
+   -> Client destroys all locks and closes the sockfd before exiting.
+   -> The server after recieving the acknowledgement of last packet from client
+      exits the child server thread.
+   -> After recieving the last packet from server, the client sends the 
+      acknowledgement. Client waits for 2*MSL(6 sec) before exiting. 
+      (ensuring that server does not send any packet which would mean that 
+      server never recieved last ack).
+   I chose MSL as 3sec as that is the max rto.
+
+6. Every time the client runs only one command. To run the other command please
+   run client again.
+
+
+OTHER SPECIFICATIONS
+---------------------
+- Packet Header details:
+    -> To save bandwidth, I reuse the header field (sequence number) with 
+       acknowledgement number while sending ack to server.
+    -> Header also contains window size which contains advertized window size 
+       while sending ack to server.
+
+- I have used spinlock on the client side sliding window, as it is being 
+  accessed and modified by main thread (while recieving packets) and consumer 
+  thread (while resetting after reading). I used ARRAY of spinlocks on each 
+  element of spinlock to improve concurrency.
+
+- For ease of visualizing output, the code can be compiled in three ways.
+  (make clean in between two make commands)
+    -> use "make" for all information.
+    -> use "make NODEBUG=1" for viewing only the contents of file sent by user.
+    -> use "make NOCONTENT=1" for viewing all debug information except the 
+       content of file.
+
+- While showing the Sliding Window in client side. I show (-1), when the packet 
+  is missing. For example, if packet 13 and 15 are recieved and 14 is not 
+  recieved yet, then window will be (13, -1, 14).
+
+- On client side, the timeout happens 10 times before exiting the program. 
+  The timers used for timeout have following values:
+    -> 3 seconds (for first packet sent by timer to get port number)
+    -> 40 seconds (recieving timeout in client)
+    -> 6 seconds (waiting after sending last ack, to ensure that it reached 
+       server)
+
+- I have used srand48() and drand48() to use the given seed and generate random 
+  values. I add current timestamp to the given seed to get different values 
+  everytime. drand48() gives values between 0.0 and 1.0 in double precision.
+
+- Packet drop probability is calculated by the same means. Generating numbers 
+  between 0.0 and 1.0 and comparing the probability with that number to decide
+  whether it should drop the packet (recieve or ack) or not.
+
+- I have also added a check in server if:
+    -> file exists or not.
+    -> server has read permission on file or not.
+- I have used pipes to communicate between server parent and child process and
+  to clean child properly when terminated/exited.
+
+- I implemented linked list to keep track of connected clients, so that I 
+  don't create new process for same client again.
+
+- As TCP send advertised window in its first packet so I have also included 
+  advertised window in our first packet with the filename.
